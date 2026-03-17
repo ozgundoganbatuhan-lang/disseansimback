@@ -456,6 +456,14 @@ async function migrate() {
 
     // ── Safe ALTER TABLE — idempotent ────────────────────────────────────
     const safeAlters = [
+      `ALTER TABLE xrays ADD COLUMN IF NOT EXISTS image_data TEXT`,
+      `ALTER TABLE teeth_records ADD COLUMN IF NOT EXISTS mobility SMALLINT NOT NULL DEFAULT 0`,
+
+
+      // v8 schema additions
+      `ALTER TABLE xrays ADD COLUMN IF NOT EXISTS image_data TEXT`,
+      `ALTER TABLE teeth_records ADD COLUMN IF NOT EXISTS mobility SMALLINT NOT NULL DEFAULT 0`,
+
       `ALTER TABLE appointments ADD COLUMN IF NOT EXISTS email_reminder_sent BOOLEAN NOT NULL DEFAULT false`,
       `ALTER TABLE appointments ADD COLUMN IF NOT EXISTS no_show BOOLEAN NOT NULL DEFAULT false`,
       `ALTER TABLE treatment_plans ADD COLUMN IF NOT EXISTS patient_ok_at TIMESTAMPTZ`,
@@ -474,7 +482,7 @@ async function migrate() {
     await client.query(`CREATE SEQUENCE IF NOT EXISTS inv_seq START 1`).catch(()=>{});
 
     await client.query('COMMIT');
-    console.log('✅ Migration tamamlandı (v7).');
+    console.log('✅ Migration tamamlandı (v8).');
   } catch (err) {
     await client.query('ROLLBACK');
     console.error('❌ Migration hatası:', err.message);
