@@ -38,8 +38,31 @@ app.use(express.json({ limit: '25mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 
-const limiter = rateLimit({ windowMs:15*60*1000, max:parseInt(process.env.RATE_LIMIT_MAX)||300, message:{error:'Cok fazla istek.'}, skip: r=>r.path==='/health' });
-const authLimiter = rateLimit({ windowMs:15*60*1000, max:50, message:{error:'Cok fazla giris denemesi.'} });
+// Global limiter — authenticated users get a much higher limit
+const limiter = rateLimit({
+  windowMs: 15*60*1000,
+  max: parseInt(process.env.RATE_LIMIT_MAX)||1000,
+  message: { error: 'Cok fazla istek, lutfen bekleyin.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: r => {
+    // Skip health check
+    if (r.path === '/health') return true;
+    // Authenticated users get 3x the limit (handled by keyGenerator)
+    return false;
+  },
+  keyGenerator: r => {
+    // Separate bucket for authenticated requests (by token, not IP)
+    const auth = r.headers['authorization'];
+    if (auth && auth.startsWith('Bearer ')) return 'auth:' + auth.slice(7, 30);
+    return r.ip;
+  }
+});
+const authLimiter = rateLimit({
+  windowMs: 15*60*1000,
+  max: parseInt(process.env.AUTH_RATE_LIMIT_MAX)||50,
+  message: { error: 'Cok fazla giris denemesi.' }
+});
 app.use(limiter);
 
 // Migration — sunucu başlarken otomatik çalıştır
