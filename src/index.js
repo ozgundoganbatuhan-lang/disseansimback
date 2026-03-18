@@ -88,7 +88,7 @@ app.get('/health', (req, res) => {
     status: 'ok',
     service: 'DisSeansim Backend',
     version: '11.0.0',
-    build: '2026-03-18T03:24:23Z',
+    build: '2026-03-18T03:32:51Z',
     db: _dbOk ? 'connected' : 'connecting',
     ts: new Date().toISOString(),
     uptime: Math.floor(process.uptime()) + 's'
