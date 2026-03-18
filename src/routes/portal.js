@@ -26,7 +26,7 @@ router.post('/token', authMiddleware, tenantMiddleware, async (req, res) => {
       { expiresIn: '30d' }
     );
 
-    const url = (process.env.FRONTEND_URL || 'https://dis.seansim.com') + '/hasta.html?t=' + token;
+    const url = (process.env.FRONTEND_URL || 'https://disseansim.com') + '/hasta.html?t=' + token;
     res.json({ token, url, patient: p.rows[0] });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -94,17 +94,16 @@ router.post('/approve-plan', verifyPortalToken, async (req, res) => {
 });
 
 
-// /link alias — frontend uses /link, canonical is /token
+// /link alias
 router.post('/link', authMiddleware, tenantMiddleware, async (req, res) => {
   try {
     const { patient_id } = req.body;
     if (!patient_id) return res.status(400).json({ error: 'patient_id gerekli' });
     const p = await query('SELECT id, first_name, last_name FROM patients WHERE id=$1 AND tenant_id=$2 AND deleted_at IS NULL',[patient_id, req.tenantId]);
-    if (!p.rows.length) return res.status(404).json({ error: 'Hasta bulunamadı' });
+    if (!p.rows.length) return res.status(404).json({ error: 'Hasta bulunamadi' });
     const token = require('jsonwebtoken').sign({ type:'portal', patientId:patient_id, tenantId:req.tenantId }, process.env.JWT_SECRET, { expiresIn:'30d' });
-    const url = (process.env.FRONTEND_URL || 'https://dis.seansim.com') + '/hasta.html?t=' + token;
+    const url = (process.env.FRONTEND_URL||'https://dis.seansim.com') + '/hasta.html?t=' + token;
     res.json({ token, url, patient: p.rows[0] });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
-
 module.exports = router;

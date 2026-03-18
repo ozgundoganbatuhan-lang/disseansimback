@@ -18,7 +18,7 @@ router.get('/', async (req, res) => {
     }
     const refs = await query("SELECT COUNT(*) as c FROM tenants WHERE settings->>'referred_by'=$1", [code]);
     const credits = await query("SELECT COALESCE(SUM((settings->>'referral_credits')::int),0) as v FROM tenants WHERE id=$1", [req.tenantId]);
-    res.json({ code, referralCount: parseInt(refs.rows[0].c), credits: parseInt(credits.rows[0].v)||0, link: (process.env.FRONTEND_URL||'https://disseansim.com') + '/giris?ref=' + code });
+    res.json({ code, referralCount: parseInt(refs.rows[0].c), credits: parseInt(credits.rows[0].v)||0, link: (process.env.FRONTEND_URL||'https://dis.seansim.com') + '/giris?ref=' + code });
   } catch(err) { res.status(500).json({ error: err.message }); }
 });
 

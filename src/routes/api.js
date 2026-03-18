@@ -170,48 +170,27 @@ router.get('/xrays', can('treatment.read'), async (req,res)=>{
 router.post('/xrays', can('treatment.write'), async (req,res)=>{
   try{
     const f=req.body;
-    if(!f.patient_id) return res.status(400).json({error:'Hasta seçilmedi'});
-    // Verify patient belongs to this tenant
+    if(!f.patient_id)return res.status(400).json({error:'Hasta secilmedi'});
     const pt=await query('SELECT id FROM patients WHERE id=$1 AND tenant_id=$2 AND deleted_at IS NULL',[f.patient_id,req.tenantId]);
-    if(!pt.rows.length) return res.status(404).json({error:'Hasta bu kliniğe kayıtlı değil'});
-
+    if(!pt.rows.length)return res.status(404).json({error:'Hasta bu klinige kayitli degil'});
     const xtype=f.xray_type||f.type||'Periapikal';
     const tdate=(f.taken_at||f.taken_date||new Date().toISOString()).slice(0,10);
-
-    // tooth_numbers: accept string "16,17" or array or null
     let teeth=null;
     if(f.tooth_numbers){
       const raw=Array.isArray(f.tooth_numbers)?f.tooth_numbers:String(f.tooth_numbers).split(/[,\s]+/);
       teeth=raw.map(n=>parseInt(n)).filter(n=>!isNaN(n)&&n>0&&n<=48);
-      if(!teeth.length) teeth=null;
+      if(!teeth.length)teeth=null;
     }
-
-    // image_data: validate it's a proper data URI or base64
-    let imgData=null;
-    if(f.image_data){
-      const img=String(f.image_data);
-      if(img.startsWith('data:')||img.length>100){
-        imgData=img;
-      }
-    }
-
     const r=await query(
       `INSERT INTO xrays(tenant_id,patient_id,doctor_id,appointment_id,type,taken_date,tooth_numbers,findings,notes,image_data)
-       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
-       RETURNING id,type xray_type,taken_date taken_at,tooth_numbers,findings,notes,
-                 CASE WHEN image_data IS NOT NULL THEN 'data_present' ELSE NULL END has_image`,
-      [req.tenantId,f.patient_id,f.doctor_id||req.user.id,f.appointment_id||null,
-       xtype,tdate,teeth,f.findings||null,f.notes||null,imgData]
+       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id,type xray_type,taken_date taken_at,tooth_numbers,findings,notes,image_data`,
+      [req.tenantId,f.patient_id,f.doctor_id||req.user.id,f.appointment_id||null,xtype,tdate,teeth,f.findings||null,f.notes||null,f.image_data||null]
     );
-    // Return full image_data separately so large responses don't break the list view
-    const row={...r.rows[0], image_data: imgData};
-    res.status(201).json(row);
+    res.status(201).json({...r.rows[0],image_data:f.image_data||null});
   }catch(err){
-    console.error('Xray save error:',err.message);
-    if(err.message.includes('value too long')){
-      return res.status(413).json({error:'Görüntü çok büyük — lütfen küçük bir dosya seçin (max 8MB)'});
-    }
-    res.status(500).json({error:'Röntgen kaydedilemedi: '+err.message});
+    console.error('Xray save:',err.message);
+    if(err.message.includes('value too long'))return res.status(413).json({error:'Goruntu cok buyuk (max 8MB)'});
+    res.status(500).json({error:err.message});
   }
 });
 router.delete('/xrays/:id', can('treatment.write'), async (req,res)=>{

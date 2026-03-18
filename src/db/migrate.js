@@ -458,7 +458,6 @@ async function migrate() {
     const safeAlters = [
       `ALTER TABLE xrays ADD COLUMN IF NOT EXISTS image_data TEXT`,
       `ALTER TABLE xrays ADD COLUMN IF NOT EXISTS file_mime TEXT`,
-      `ALTER TABLE xrays ADD COLUMN IF NOT EXISTS original_filename TEXT`,
       `ALTER TABLE teeth_records ADD COLUMN IF NOT EXISTS mobility SMALLINT NOT NULL DEFAULT 0`,
 
 
