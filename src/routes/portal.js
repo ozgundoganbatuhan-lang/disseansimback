@@ -93,7 +93,8 @@ router.post('/approve-plan', verifyPortalToken, async (req, res) => {
   }
 });
 
-// ── /link alias for /token (frontend compatibility) ──────────────────────────
+
+// ── /link alias (frontend calls /link, canonical is /token) ───────────────
 router.post('/link', authMiddleware, tenantMiddleware, async (req, res) => {
   try {
     const { patient_id } = req.body;
