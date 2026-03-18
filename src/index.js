@@ -34,7 +34,9 @@ app.use(cors({
 }));
 
 app.use(compression());
-app.use(express.json({ limit: '25mb' }));
+// Large limit for xray base64 uploads (a 5MP xray ≈ 7MB base64)
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 
@@ -100,5 +102,8 @@ app.use((err, req, res, next) => {
 });
 
 const PORT = parseInt(process.env.PORT) || 3001;
-app.listen(PORT, '0.0.0.0', () => console.log('DisSeansim Backend v11.0 :' + PORT));
+const server = app.listen(PORT, '0.0.0.0', () => console.log('DisSeansim Backend v11.0 :' + PORT));
+// Allow 60s for large xray uploads
+server.timeout = 60000;
+server.keepAliveTimeout = 65000;
 module.exports = app;
