@@ -23,6 +23,7 @@ app.use(cors({
     if (!origin) return cb(null, true);
     const raw = process.env.CORS_ORIGINS || '*';
     const allowed = raw.split(',').map(s => s.trim());
+    // Add dis.seansim.com to CORS_ORIGINS env var on Railway
     if (allowed.includes('*') || allowed.includes(origin)) return cb(null, true);
     console.warn('CORS blocked:', origin, '| allowed:', allowed);
     cb(new Error('CORS not allowed: ' + origin));
@@ -37,7 +38,6 @@ app.use(compression());
 // Large limit for xray base64 uploads (a 5MP xray ≈ 7MB base64)
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
-app.use(express.urlencoded({ extended: true }));
 app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 
 // Global limiter — authenticated users get a much higher limit
