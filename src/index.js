@@ -55,7 +55,7 @@ if (process.env.ENABLE_SCHEDULER !== 'false') {
   try { require('./services/scheduler').startScheduler(); } catch(e) { console.warn('Scheduler hatasi:', e.message); }
 }
 
-app.get('/health', (req, res) => res.json({ status:'ok', service:'DisSeansim Backend', version:'8.0.0', ts:new Date().toISOString() }));
+app.get('/health', (req, res) => res.json({ status:'ok', service:'DisSeansim Backend', version:'10.0.0', ts:new Date().toISOString() }));
 
 app.use('/api/auth', authLimiter, require('./routes/auth'));
 app.use('/api/subscriptions', require('./routes/subscriptions'));
@@ -77,5 +77,5 @@ app.use((err, req, res, next) => {
 });
 
 const PORT = parseInt(process.env.PORT) || 3001;
-app.listen(PORT, '0.0.0.0', () => console.log('DisSeansim Backend v8.0 :' + PORT));
+app.listen(PORT, '0.0.0.0', () => console.log('DisSeansim Backend v10.0 :' + PORT));
 module.exports = app;

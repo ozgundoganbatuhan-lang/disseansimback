@@ -64,7 +64,8 @@ router.post('/remind/:appointmentId', can('appointment.write'), async (req, res)
 router.get('/history', async (req, res) => {
   try {
     const r = await query(
-      `SELECT n.*, p.first_name, p.last_name FROM notifications n
+      `SELECT n.*, CONCAT(p.first_name, ' ', p.last_name) AS patient_name
+       FROM notifications n
        LEFT JOIN patients p ON p.id = n.patient_id
        WHERE n.tenant_id=$1 AND n.channel='sms'
        ORDER BY n.created_at DESC LIMIT 100`,
