@@ -74,13 +74,26 @@ migrate()
   .catch(e => console.error('Migration hatasi (devam ediliyor):', e.message));
 
 const { pool } = require('./db');
-pool.query('SELECT 1').then(() => console.log('PostgreSQL OK')).catch(err => console.error('PostgreSQL ERR:', err.message));
+pool.query('SELECT 1').then(() => { _dbOk = true; console.log('PostgreSQL OK'); }).catch(err => { console.error('PostgreSQL ERR:', err.message); });
 
 if (process.env.ENABLE_SCHEDULER !== 'false') {
   try { require('./services/scheduler').startScheduler(); } catch(e) { console.warn('Scheduler hatasi:', e.message); }
 }
 
-app.get('/health', (req, res) => res.json({ status:'ok', service:'DisSeansim Backend', version:'11.0.0', ts:new Date().toISOString() }));
+// ── HEALTH — must respond immediately, before DB ────────────────────
+// Railway kills container if /health doesn't respond within healthcheckTimeout
+var _dbOk = false;
+app.get('/health', (req, res) => {
+  res.json({
+    status: 'ok',
+    service: 'DisSeansim Backend',
+    version: '11.0.0',
+    build: '2026-03-18T03:24:23Z',
+    db: _dbOk ? 'connected' : 'connecting',
+    ts: new Date().toISOString(),
+    uptime: Math.floor(process.uptime()) + 's'
+  });
+});
 
 app.use('/api/auth', authLimiter, require('./routes/auth'));
 app.use('/api/subscriptions', require('./routes/subscriptions'));

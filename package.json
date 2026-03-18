@@ -1,6 +1,6 @@
 {
   "name": "disseansim-backend",
-  "version": "11.0.0",
+  "version": "11.0.20260318032423",
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
@@ -23,5 +23,6 @@
     "pg": "^8.11.5",
     "uuid": "^9.0.1",
     "winston": "^3.13.0"
-  }
+  },
+  "buildTime": "2026-03-18T03:24:23Z"
 }

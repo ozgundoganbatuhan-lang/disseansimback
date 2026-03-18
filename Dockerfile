@@ -1,20 +1,20 @@
+# Build: 2026-03-18T03:24:23Z
 FROM node:20-alpine
 WORKDIR /app
 
-# native modüller için derleme araçları (better-sqlite3)
-RUN apk add --no-cache python3 make g++
+# Only need basic tools — no native module compilation needed
+RUN apk add --no-cache dumb-init
 
-# bağımlılıkları önce kopyala (cache katmanı)
+# Dependencies first (layer cache)
 COPY package.json ./
+RUN npm install --omit=dev
 
-# package-lock.json varsa kullan, yoksa npm install'a düş
-RUN npm install --omit=dev --prefer-offline || npm install --omit=dev
-
-# uygulama kodunu kopyala
+# Application code
 COPY . .
 
-# veri dizinini oluştur (Volume mount edilmezse local fallback)
-RUN mkdir -p /data
+# Railway injects PORT dynamically
+EXPOSE 3001
 
-EXPOSE 4000
-CMD ["node", "server.js"]
+# Use dumb-init for proper signal handling
+ENTRYPOINT ["dumb-init", "--"]
+CMD ["node", "src/index.js"]
