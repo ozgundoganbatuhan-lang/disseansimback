@@ -67,7 +67,7 @@ if (process.env.ENABLE_SCHEDULER !== 'false') {
   try { require('./services/scheduler').startScheduler(); } catch(e) { console.warn('Scheduler hatasi:', e.message); }
 }
 
-app.get('/health', (req, res) => res.json({ status:'ok', service:'DisSeansim Backend', version:'12.0.0',build:'2026-03-18T23:49:18Z', ts:new Date().toISOString() }));
+app.get('/health', (req, res) => res.json({ status:'ok', service:'DisSeansim Backend', version:'12.0.0',build:'2026-03-19T00:05:01Z', ts:new Date().toISOString() }));
 
 app.use('/api/auth', authLimiter, require('./routes/auth'));
 app.use('/api/subscriptions', require('./routes/subscriptions'));
