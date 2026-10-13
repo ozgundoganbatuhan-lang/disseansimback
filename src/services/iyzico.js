@@ -9,6 +9,8 @@ const iyzipay = new Iyzipay({
   uri: process.env.IYZICO_URI || 'https://sandbox-api.iyzipay.com'
 });
 
+const KDV_RATE = process.env.KDV_RATE != null ? parseFloat(process.env.KDV_RATE) : 0.20;
+
 const PLAN_PRICES = {
   starter:    { monthly: 890.00,  annual: 8900.00  },
   growth:     { monthly: 1690.00, annual: 16900.00 },
@@ -25,7 +27,8 @@ async function initCheckout({ tenant, user, plan, period, callbackUrl, ip }) {
   const price = PLAN_PRICES[plan] && PLAN_PRICES[plan][period];
   if (!price) throw new Error('Gecersiz plan veya donem');
   const conversationId = uuidv4();
-  const amount = price.toFixed(2);
+  // Liste fiyatları KDV hariç; tahsilatta KDV eklenir.
+  const amount = (Math.round(price * (1 + KDV_RATE) * 100) / 100).toFixed(2);
   const request = {
     locale: Iyzipay.LOCALE.TR,
     conversationId,
@@ -90,6 +93,7 @@ async function processCallback({ token, tenantId, plan, period }) {
     throw new Error(result.errorMessage || 'Odeme basarisiz');
   }
   const price = PLAN_PRICES[plan][period];
+  const paid = parseFloat(result.paidPrice) || Math.round(price * (1 + KDV_RATE) * 100) / 100; // KDV dahil tahsil edilen
   const limits = PLAN_LIMITS[plan] || PLAN_LIMITS.starter;
   const now = new Date();
   const periodStart = now.toISOString().slice(0,10);
@@ -103,7 +107,7 @@ async function processCallback({ token, tenantId, plan, period }) {
     );
     await client.query(
       'INSERT INTO subscription_payments (tenant_id, iyzico_payment_id, iyzico_token, amount, currency, plan, period, status, paid_at, period_start, period_end) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,NOW(),$9,$10)',
-      [tenantId, result.paymentId, token, price, 'TRY', plan, period, 'success', periodStart, periodEnd]
+      [tenantId, result.paymentId, token, paid, 'TRY', plan, period, 'success', periodStart, periodEnd]
     );
   });
   return { success: true, plan, periodEnd };
@@ -114,4 +118,4 @@ async function cancelSubscription(tenantId) {
   return { success: true };
 }
 
-module.exports = { initCheckout, retrieveCheckout, processCallback, cancelSubscription, PLAN_PRICES, PLAN_LIMITS };
+module.exports = { initCheckout, retrieveCheckout, processCallback, cancelSubscription, PLAN_PRICES, PLAN_LIMITS, KDV_RATE };
