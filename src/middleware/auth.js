@@ -32,6 +32,11 @@ async function tenantMiddleware(req, res, next) {
     const now = new Date();
     const trialEnd = new Date(m.trial_ends_at);
     if (m.plan === 'trial' && now > trialEnd) req.planExpired = true;
+    // Süresi dolan deneme salt okunur: kayıtlar görülebilir/dışa aktarılabilir, yeni işlem için plan gerekir.
+    const billingPath = /^\/api\/(subscriptions|iyzico|auth)\b/.test(req.originalUrl || '');
+    if (req.planExpired && req.method !== 'GET' && !billingPath) {
+      return res.status(402).json({ error: 'Deneme süreniz doldu. Devam etmek için planınızı aktifleştirin.', upgrade: true, code: 'TRIAL_EXPIRED' });
+    }
     req.tenantId = tenantId;
     req.membership = m;
     next();
