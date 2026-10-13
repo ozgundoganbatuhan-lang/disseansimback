@@ -16,7 +16,9 @@ router.post('/note-assist', async (req, res) => {
 
     // Check plan — AI only for growth+
     const plan = req.membership && req.membership.plan;
-    if (!['growth','enterprise'].includes(plan)) {
+    // Deneme süresince (14 gün) AI açık: kullanıcı satın almadan önce denesin.
+    const trialActive = plan === 'trial' && !req.planExpired;
+    if (!trialActive && !['growth','enterprise'].includes(plan)) {
       return res.status(402).json({ error: 'AI Not Asistanı Klinik planında mevcut.', upgrade: true });
     }
 
@@ -72,7 +74,9 @@ router.post('/rx-suggest', async (req, res) => {
     if (!apiKey) return res.status(503).json({ error: 'AI servisi yapılandırılmamış' });
 
     const plan = req.membership && req.membership.plan;
-    if (!['growth','enterprise'].includes(plan)) {
+    // Deneme süresince (14 gün) AI açık: kullanıcı satın almadan önce denesin.
+    const trialActive = plan === 'trial' && !req.planExpired;
+    if (!trialActive && !['growth','enterprise'].includes(plan)) {
       return res.status(402).json({ error: 'AI önerisi Klinik planında mevcut.', upgrade: true });
     }
 

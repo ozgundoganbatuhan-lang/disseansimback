@@ -1,4 +1,6 @@
 'use strict';
+// Klinikler Türkiye saatinde (UTC+3, yaz saati yok) çalışır; "bugün" UTC'ye göre değil buna göre hesaplanır.
+const trDay = (offsetMs) => new Date(Date.now() + offsetMs + 3 * 3600000).toISOString().slice(0, 10);
 const router = require('express').Router();
 const { authMiddleware, tenantMiddleware, can } = require('../middleware/auth');
 const { query } = require('../db');
@@ -8,17 +10,17 @@ router.use(authMiddleware, tenantMiddleware);
 router.get('/dashboard', async (req, res) => {
   try {
     const tid = req.tenantId;
-    const today = new Date().toISOString().slice(0,10);
-    const tomorrow = new Date(Date.now()+86400000).toISOString().slice(0,10);
-    const last30 = new Date(Date.now()-30*86400000).toISOString().slice(0,10);
+    const today = trDay(0);
+    const tomorrow = trDay(+86400000);
+    const last30 = trDay(-30*86400000);
     const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0,10);
     const prevMs = new Date(new Date().getFullYear(), new Date().getMonth()-1, 1).toISOString().slice(0,10);
     const prevMe = new Date(new Date().getFullYear(), new Date().getMonth(), 0).toISOString().slice(0,10);
-    const weekAgo = new Date(Date.now()-6*86400000).toISOString().slice(0,10);
+    const weekAgo = trDay(-6*86400000);
 
     const [a,b,c,d,e,f,g,h,i,j,k,l,m] = await Promise.all([
-      query(`SELECT COUNT(*) c FROM appointments WHERE tenant_id=$1 AND starts_at::date=$2 AND status!='cancelled'`,[tid,today]),
-      query(`SELECT COUNT(*) c FROM appointments WHERE tenant_id=$1 AND starts_at::date=$2 AND status='completed'`,[tid,today]),
+      query(`SELECT COUNT(*) c FROM appointments WHERE tenant_id=$1 AND (starts_at AT TIME ZONE 'Europe/Istanbul')::date=$2 AND status!='cancelled'`,[tid,today]),
+      query(`SELECT COUNT(*) c FROM appointments WHERE tenant_id=$1 AND (starts_at AT TIME ZONE 'Europe/Istanbul')::date=$2 AND status='completed'`,[tid,today]),
       query(`SELECT COUNT(*) c FROM patients WHERE tenant_id=$1 AND deleted_at IS NULL`,[tid]),
       query(`SELECT COUNT(*) c FROM patients WHERE tenant_id=$1 AND deleted_at IS NULL AND created_at::date>=$2`,[tid,monthStart]),
       query(`SELECT COALESCE(SUM(p.amount),0) v FROM payments p JOIN invoices i ON i.id=p.invoice_id WHERE i.tenant_id=$1 AND p.paid_at::date>=$2`,[tid,monthStart]),
@@ -26,10 +28,10 @@ router.get('/dashboard', async (req, res) => {
       query(`SELECT COALESCE(SUM(total-amount_paid),0) v FROM invoices WHERE tenant_id=$1 AND status IN ('draft','partial')`,[tid]),
       query(`SELECT COUNT(*) c FROM inventory_items WHERE tenant_id=$1 AND stock_qty<=min_qty`,[tid]),
       query(`SELECT name,category,stock_qty qty,min_qty,unit FROM inventory_items WHERE tenant_id=$1 AND stock_qty<=min_qty ORDER BY (min_qty-stock_qty) DESC LIMIT 6`,[tid]),
-      query(`SELECT COUNT(*) c FROM appointments WHERE tenant_id=$1 AND starts_at::date=$2 AND status='scheduled'`,[tid,tomorrow]),
-      query(`SELECT a.id,a.starts_at,a.ends_at,a.type,a.status,a.tooth_numbers,p.first_name,p.last_name,p.phone,u.name doctor_name FROM appointments a JOIN patients p ON p.id=a.patient_id JOIN users u ON u.id=a.doctor_id WHERE a.tenant_id=$1 AND a.starts_at::date=$2 AND a.status!='cancelled' ORDER BY a.starts_at`,[tid,today]),
-      query(`SELECT starts_at::date date,COUNT(*) c FROM appointments WHERE tenant_id=$1 AND starts_at::date BETWEEN $2 AND $3 AND status!='cancelled' GROUP BY 1 ORDER BY 1`,[tid,weekAgo,tomorrow]),
-      query(`SELECT COUNT(*) total,SUM(CASE WHEN no_show THEN 1 ELSE 0 END) ns FROM appointments WHERE tenant_id=$1 AND starts_at::date BETWEEN $2 AND $3`,[tid,last30,today]),
+      query(`SELECT COUNT(*) c FROM appointments WHERE tenant_id=$1 AND (starts_at AT TIME ZONE 'Europe/Istanbul')::date=$2 AND status='scheduled'`,[tid,tomorrow]),
+      query(`SELECT a.id,a.starts_at,a.ends_at,a.type,a.status,a.tooth_numbers,p.first_name,p.last_name,p.phone,u.name doctor_name FROM appointments a JOIN patients p ON p.id=a.patient_id JOIN users u ON u.id=a.doctor_id WHERE a.tenant_id=$1 AND (a.starts_at AT TIME ZONE 'Europe/Istanbul')::date=$2 AND a.status!='cancelled' ORDER BY a.starts_at`,[tid,today]),
+      query(`SELECT (starts_at AT TIME ZONE 'Europe/Istanbul')::date date,COUNT(*) c FROM appointments WHERE tenant_id=$1 AND (starts_at AT TIME ZONE 'Europe/Istanbul')::date BETWEEN $2 AND $3 AND status!='cancelled' GROUP BY 1 ORDER BY 1`,[tid,weekAgo,tomorrow]),
+      query(`SELECT COUNT(*) total,SUM(CASE WHEN no_show THEN 1 ELSE 0 END) ns FROM appointments WHERE tenant_id=$1 AND (starts_at AT TIME ZONE 'Europe/Istanbul')::date BETWEEN $2 AND $3`,[tid,last30,today]),
     ]);
     const rev=parseFloat(e.rows[0].v), prev=parseFloat(f.rows[0].v);
     const ns=m.rows[0];
@@ -50,8 +52,8 @@ router.get('/appointments', can('appointment.read'), async (req,res)=>{
   try{
     const{date,from,to,doctor_id,patient_id}=req.query;
     let w='WHERE a.tenant_id=$1',p=[req.tenantId],i=2;
-    if(date){w+=` AND a.starts_at::date=$${i}`;p.push(date);i++;}
-    else if(from&&to){w+=` AND a.starts_at::date BETWEEN $${i} AND $${i+1}`;p.push(from,to);i+=2;}
+    if(date){w+=` AND (a.starts_at AT TIME ZONE 'Europe/Istanbul')::date=$${i}`;p.push(date);i++;}
+    else if(from&&to){w+=` AND (a.starts_at AT TIME ZONE 'Europe/Istanbul')::date BETWEEN $${i} AND $${i+1}`;p.push(from,to);i+=2;}
     if(doctor_id){w+=` AND a.doctor_id=$${i}`;p.push(doctor_id);i++;}
     if(patient_id){w+=` AND a.patient_id=$${i}`;p.push(patient_id);i++;}
     const r=await query(`SELECT a.*,p.first_name,p.last_name,p.phone,u.name doctor_name FROM appointments a JOIN patients p ON p.id=a.patient_id JOIN users u ON u.id=a.doctor_id ${w} ORDER BY a.starts_at`,p);
@@ -124,7 +126,7 @@ router.get('/notes', can('treatment.read'), async (req,res)=>{
 router.post('/notes', can('treatment.write'), async (req,res)=>{
   try{
     const f=req.body;if(!f.patient_id||!f.procedure)return res.status(400).json({error:'Zorunlu alanlar eksik'});
-    const r=await query(`INSERT INTO treatment_notes(tenant_id,patient_id,appointment_id,plan_id,doctor_id,tooth_numbers,session_date,procedure,anesthesia,materials,findings,next_steps,duration_mins) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *`,[req.tenantId,f.patient_id,f.appointment_id||null,f.plan_id||null,f.doctor_id||req.user.id,f.tooth_numbers||null,f.session_date||new Date().toISOString().slice(0,10),f.procedure,f.anesthesia||null,f.materials||null,f.findings||null,f.next_steps||null,f.duration_mins||null]);
+    const r=await query(`INSERT INTO treatment_notes(tenant_id,patient_id,appointment_id,plan_id,doctor_id,tooth_numbers,session_date,procedure,anesthesia,materials,findings,next_steps,duration_mins) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *`,[req.tenantId,f.patient_id,f.appointment_id||null,f.plan_id||null,f.doctor_id||req.user.id,f.tooth_numbers||null,f.session_date||trDay(0),f.procedure,f.anesthesia||null,f.materials||null,f.findings||null,f.next_steps||null,f.duration_mins||null]);
     res.status(201).json(r.rows[0]);
   }catch(err){res.status(500).json({error:err.message});}
 });
@@ -150,7 +152,7 @@ router.post('/prescriptions', can('treatment.write'), async (req,res)=>{
   try{
     const f=req.body;if(!f.patient_id)return res.status(400).json({error:'Hasta zorunlu'});
     const drugs=typeof f.drugs==='object'?JSON.stringify(f.drugs):(f.drugs||'[]');
-    const r=await query(`INSERT INTO prescriptions(tenant_id,patient_id,doctor_id,appointment_id,rx_date,diagnosis,icd_code,drugs,notes) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,[req.tenantId,f.patient_id,f.doctor_id||req.user.id,f.appointment_id||null,f.rx_date||new Date().toISOString().slice(0,10),f.diagnosis||null,f.icd_code||null,drugs,f.notes||null]);
+    const r=await query(`INSERT INTO prescriptions(tenant_id,patient_id,doctor_id,appointment_id,rx_date,diagnosis,icd_code,drugs,notes) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,[req.tenantId,f.patient_id,f.doctor_id||req.user.id,f.appointment_id||null,f.rx_date||trDay(0),f.diagnosis||null,f.icd_code||null,drugs,f.notes||null]);
     res.status(201).json(r.rows[0]);
   }catch(err){res.status(500).json({error:err.message});}
 });
@@ -209,7 +211,7 @@ router.get('/sterilization', can('sterilization.write'), async (req,res)=>{
 router.post('/sterilization', can('sterilization.write'), async (req,res)=>{
   try{
     const f=req.body;if(!f.device_name)return res.status(400).json({error:'Cihaz adı zorunlu'});
-    const r=await query(`INSERT INTO sterilization_logs(tenant_id,log_date,device_name,device_serial,cycle_no,temperature,pressure,duration_min,test_type,test_result,operator_id,notes) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id`,[req.tenantId,f.date||new Date().toISOString().slice(0,10),f.device_name,f.serial_no||null,f.cycle_no||null,f.temperature||null,f.pressure||null,f.duration||null,f.test_type||'chemical',f.result||'pass',req.user.id,f.notes||null]);
+    const r=await query(`INSERT INTO sterilization_logs(tenant_id,log_date,device_name,device_serial,cycle_no,temperature,pressure,duration_min,test_type,test_result,operator_id,notes) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id`,[req.tenantId,f.date||trDay(0),f.device_name,f.serial_no||null,f.cycle_no||null,f.temperature||null,f.pressure||null,f.duration||null,f.test_type||'chemical',f.result||'pass',req.user.id,f.notes||null]);
     res.status(201).json({ok:true,id:r.rows[0].id});
   }catch(err){res.status(500).json({error:err.message});}
 });
@@ -237,7 +239,7 @@ router.post('/invoices', can('billing.write'), async (req,res)=>{
     const taxR=parseFloat(f.tax_rate||0),taxA=(sub-disc)*taxR/100;
     const total=Math.max(0,sub-disc+taxA),paid=parseFloat(f.amount_paid||0);
     const status=paid>=total&&total>0?'paid':paid>0?'partial':'draft';
-    const r=await query(`INSERT INTO invoices(tenant_id,patient_id,appointment_id,inv_no,inv_date,status,items,subtotal,discount_amount,tax_rate,tax_amount,total,amount_paid,notes,created_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING *`,[req.tenantId,f.patient_id,f.appointment_id||null,inv_no,f.inv_date||new Date().toISOString().slice(0,10),status,items,sub.toFixed(2),disc.toFixed(2),taxR.toFixed(2),taxA.toFixed(2),total.toFixed(2),paid.toFixed(2),f.notes||null,req.user.id]);
+    const r=await query(`INSERT INTO invoices(tenant_id,patient_id,appointment_id,inv_no,inv_date,status,items,subtotal,discount_amount,tax_rate,tax_amount,total,amount_paid,notes,created_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING *`,[req.tenantId,f.patient_id,f.appointment_id||null,inv_no,f.inv_date||trDay(0),status,items,sub.toFixed(2),disc.toFixed(2),taxR.toFixed(2),taxA.toFixed(2),total.toFixed(2),paid.toFixed(2),f.notes||null,req.user.id]);
     if(paid>0)await query(`INSERT INTO payments(tenant_id,invoice_id,amount,method,paid_at,recorded_by) VALUES($1,$2,$3,$4,NOW(),$5)`,[req.tenantId,r.rows[0].id,paid,f.payment_method||'nakit',req.user.id]);
     res.status(201).json(r.rows[0]);
   }catch(err){res.status(500).json({error:err.message});}
@@ -288,17 +290,17 @@ router.delete('/inventory/:id', can('inventory.write'), async (req,res)=>{
 router.get('/analytics', can('reports.view'), async (req,res)=>{
   try{
     const{from,to}=req.query;
-    const f=from||new Date(Date.now()-30*86400000).toISOString().slice(0,10);
-    const t=to||new Date().toISOString().slice(0,10);
+    const f=from||trDay(-30*86400000);
+    const t=to||trDay(0);
     const tid=req.tenantId;
     const[r1,r2,r3,r4,r5,r6,r7,r8]=await Promise.all([
       query(`SELECT COALESCE(SUM(p.amount),0) v FROM payments p JOIN invoices i ON i.id=p.invoice_id WHERE i.tenant_id=$1 AND p.paid_at::date BETWEEN $2 AND $3`,[tid,f,t]),
       query(`SELECT COUNT(*) c FROM patients WHERE tenant_id=$1 AND created_at::date BETWEEN $2 AND $3 AND deleted_at IS NULL`,[tid,f,t]),
-      query(`SELECT COUNT(*) c FROM appointments WHERE tenant_id=$1 AND starts_at::date BETWEEN $2 AND $3 AND status!='cancelled'`,[tid,f,t]),
-      query(`SELECT COUNT(*) c FROM appointments WHERE tenant_id=$1 AND starts_at::date BETWEEN $2 AND $3 AND (status='no-show' OR no_show=true)`,[tid,f,t]),
+      query(`SELECT COUNT(*) c FROM appointments WHERE tenant_id=$1 AND (starts_at AT TIME ZONE 'Europe/Istanbul')::date BETWEEN $2 AND $3 AND status!='cancelled'`,[tid,f,t]),
+      query(`SELECT COUNT(*) c FROM appointments WHERE tenant_id=$1 AND (starts_at AT TIME ZONE 'Europe/Istanbul')::date BETWEEN $2 AND $3 AND (status='no-show' OR no_show=true)`,[tid,f,t]),
       query(`SELECT paid_at::date date,COALESCE(SUM(amount),0) amount FROM payments p JOIN invoices i ON i.id=p.invoice_id WHERE i.tenant_id=$1 AND p.paid_at::date BETWEEN $2 AND $3 GROUP BY 1 ORDER BY 1`,[tid,f,t]),
       query(`SELECT method,COALESCE(SUM(amount),0) total,COUNT(*) count FROM payments p JOIN invoices i ON i.id=p.invoice_id WHERE i.tenant_id=$1 AND p.paid_at::date BETWEEN $2 AND $3 GROUP BY method ORDER BY total DESC`,[tid,f,t]),
-      query(`SELECT type,COUNT(*) count FROM appointments WHERE tenant_id=$1 AND starts_at::date BETWEEN $2 AND $3 AND status!='cancelled' GROUP BY type ORDER BY count DESC LIMIT 10`,[tid,f,t]),
+      query(`SELECT type,COUNT(*) count FROM appointments WHERE tenant_id=$1 AND (starts_at AT TIME ZONE 'Europe/Istanbul')::date BETWEEN $2 AND $3 AND status!='cancelled' GROUP BY type ORDER BY count DESC LIMIT 10`,[tid,f,t]),
       query(`SELECT pt.first_name,pt.last_name,COALESCE(SUM(py.amount),0) total FROM payments py JOIN invoices i ON i.id=py.invoice_id JOIN patients pt ON pt.id=i.patient_id WHERE i.tenant_id=$1 AND py.paid_at::date BETWEEN $2 AND $3 GROUP BY pt.id,pt.first_name,pt.last_name ORDER BY total DESC LIMIT 10`,[tid,f,t]),
     ]);
     res.json({totalRevenue:parseFloat(r1.rows[0].v),newPatients:+r2.rows[0].c,totalApts:+r3.rows[0].c,noShowCount:+r4.rows[0].c,dailyRevenue:r5.rows,paymentMethods:r6.rows,aptByType:r7.rows,topPatients:r8.rows});
@@ -333,7 +335,7 @@ router.get('/sms/stats', async (req,res)=>{
   try{
     const[s,t]=await Promise.all([
       query(`SELECT COUNT(*) c,COUNT(*) FILTER(WHERE status='sent') ok FROM notifications WHERE tenant_id=$1 AND channel='sms' AND created_at>=NOW()-INTERVAL '30 days'`,[req.tenantId]),
-      query(`SELECT COUNT(*) c FROM appointments WHERE tenant_id=$1 AND starts_at::date=NOW()::date+1 AND status='scheduled'`,[req.tenantId]),
+      query(`SELECT COUNT(*) c FROM appointments WHERE tenant_id=$1 AND (starts_at AT TIME ZONE 'Europe/Istanbul')::date=NOW()::date+1 AND status='scheduled'`,[req.tenantId]),
     ]);
     const total=+s.rows[0].c,succ=+s.rows[0].ok;
     res.json({sent:total,successRate:total>0?Math.round(succ/total*100):0,tomorrow:+t.rows[0].c});
