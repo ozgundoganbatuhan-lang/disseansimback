@@ -22,7 +22,7 @@ async function sendAppointmentReminderEmail(appointment) {
   const timeStr = d.toLocaleTimeString('tr-TR', { hour:'2-digit', minute:'2-digit' });
   try {
     await transport.sendMail({
-      from: `"${appointment.clinic_name || 'DişSeansım'}" <${process.env.SMTP_FROM || 'hatirlatma@disseansim.com'}>`,
+      from: `"${appointment.clinic_name || 'DişSeansım'}" <${process.env.SMTP_FROM || 'info@seansim.com'}>`,
       to: appointment.email,
       subject: `Randevu Hatırlatması — ${dateStr} ${timeStr}`,
       html: `
@@ -52,14 +52,14 @@ async function sendWelcomeEmail(user, clinicName) {
   const transport = getTransport();
   try {
     await transport.sendMail({
-      from: `"DişSeansım" <${process.env.SMTP_FROM || 'merhaba@disseansim.com'}>`,
+      from: `"DişSeansım" <${process.env.SMTP_FROM || 'info@seansim.com'}>`,
       to: user.email,
       subject: 'DişSeansım\'a Hoş Geldiniz 🦷',
       html: `
         <div style="font-family:system-ui,sans-serif;max-width:500px;margin:0 auto">
           <h1 style="color:#132D32">Hoş Geldiniz, ${user.name}!</h1>
           <p style="color:#555;line-height:1.7">${clinicName || 'Kliniğiniz'} için DişSeansım hesabınız başarıyla oluşturuldu. 14 günlük ücretsiz deneme süreniz başladı.</p>
-          <a href="${process.env.FRONTEND_URL || 'https://disseansim.com'}/app.html" style="display:inline-block;background:#2ECAD8;color:#0C1E22;padding:12px 24px;border-radius:8px;font-weight:700;text-decoration:none">Uygulamaya Git →</a>
+          <a href="${process.env.FRONTEND_URL || 'https://dis.seansim.com'}/app.html" style="display:inline-block;background:#2ECAD8;color:#0C1E22;padding:12px 24px;border-radius:8px;font-weight:700;text-decoration:none">Uygulamaya Git →</a>
         </div>`
     });
   } catch (e) { console.error('Welcome email error:', e.message); }

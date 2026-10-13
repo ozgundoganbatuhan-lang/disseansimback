@@ -444,14 +444,17 @@ async function migrate() {
         ('trial',      'Ücretsiz Deneme', 0,     0,      2,    1,  200,    10000,   1,  '["odontogram","prescriptions","sterilization","appointments","patients"]')
         ON CONFLICT DO NOTHING;
       INSERT INTO subscription_plans VALUES
-        ('starter',    'Solo Hekim',     590,   5900,   2,    1,  2000,   50000,   5,  '["odontogram","prescriptions","sterilization","appointments","patients","billing","inventory","xrays","reports_basic"]')
+        ('starter',    'Solo Hekim',     890,   8900,   2,    1,  2000,   50000,   5,  '["odontogram","prescriptions","sterilization","appointments","patients","billing","inventory","xrays","reports_basic"]')
         ON CONFLICT DO NOTHING;
       INSERT INTO subscription_plans VALUES
-        ('growth',     'Klinik',        1190,  11900,  8,    3,  NULL,   200000,  20, '["all_starter","multi_branch","multi_doctor","api_access","reports_advanced","team_management","ai_notes"]')
+        ('growth',     'Klinik',        1690,  16900,  8,    3,  NULL,   200000,  20, '["all_starter","multi_branch","multi_doctor","api_access","reports_advanced","team_management","ai_notes"]')
         ON CONFLICT DO NOTHING;
       INSERT INTO subscription_plans VALUES
         ('enterprise', 'Poliklinik',    NULL,  NULL,   NULL, NULL, NULL, NULL,    NULL,'["all_growth","sso","custom_domain","sla","dedicated_support","white_label"]')
         ON CONFLICT DO NOTHING;
+      -- 2026-10: fiyatlar güncellendi (mevcut satırları da düzelt)
+      UPDATE subscription_plans SET price_monthly = 890,  price_annual = 8900  WHERE id = 'starter';
+      UPDATE subscription_plans SET price_monthly = 1690, price_annual = 16900 WHERE id = 'growth';
     `);
 
     // ── Safe ALTER TABLE — idempotent ────────────────────────────────────

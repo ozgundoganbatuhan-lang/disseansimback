@@ -26,7 +26,7 @@ router.post('/token', authMiddleware, tenantMiddleware, async (req, res) => {
       { expiresIn: '30d' }
     );
 
-    const url = (process.env.FRONTEND_URL || 'https://disseansim.com') + '/hasta.html?t=' + token;
+    const url = (process.env.FRONTEND_URL || 'https://dis.seansim.com') + '/hasta.html?t=' + token;
     res.json({ token, url, patient: p.rows[0] });
   } catch (err) {
     res.status(500).json({ error: err.message });

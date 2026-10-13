@@ -10,8 +10,8 @@ const iyzipay = new Iyzipay({
 });
 
 const PLAN_PRICES = {
-  starter:    { monthly: 590.00,  annual: 5900.00  },
-  growth:     { monthly: 1190.00, annual: 11900.00 },
+  starter:    { monthly: 890.00,  annual: 8900.00  },
+  growth:     { monthly: 1690.00, annual: 16900.00 },
   enterprise: { monthly: null, annual: null }
 };
 
