@@ -12,8 +12,8 @@ const iyzipay = new Iyzipay({
 const KDV_RATE = process.env.KDV_RATE != null ? parseFloat(process.env.KDV_RATE) : 0.20;
 
 const PLAN_PRICES = {
-  starter:    { monthly: 890.00,  annual: 8900.00  },
-  growth:     { monthly: 1690.00, annual: 16900.00 },
+  starter:    { monthly: 690.00,  annual: 6900.00  },
+  growth:     { monthly: 1490.00, annual: 14900.00 },
   enterprise: { monthly: null, annual: null }
 };
 

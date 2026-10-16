@@ -34,10 +34,14 @@ app.use(cors({
 }));
 
 app.use(compression());
+// Hasta imza sayfası: giriş gerektirmez, küçük gövde sınırı (genel 50 MB sınırından önce bağlanır)
+app.use('/api/public', rateLimit({ windowMs: 15 * 60 * 1000, max: 60 }), express.json({ limit: '600kb' }), require('./routes/publicConsent'));
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 app.use(express.urlencoded({ extended: true }));
-app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
+// İmza linkindeki token loglara yazılmasın
+morgan.token('safe-url', (req) => (req.originalUrl || req.url).replace(/(\/api\/public\/onam\/)[^/?]+/, '$1***'));
+app.use(morgan(process.env.NODE_ENV === 'production' ? ':remote-addr - :remote-user [:date[clf]] ":method :safe-url HTTP/:http-version" :status :res[content-length] ":referrer" ":user-agent"' : ':method :safe-url :status :response-time ms'));
 
 const limiter = rateLimit({
   windowMs:15*60*1000,
@@ -45,11 +49,8 @@ const limiter = rateLimit({
   message:{error:'Cok fazla istek.'},
   standardHeaders:true, legacyHeaders:false,
   skip:r=>r.path==='/health',
-  keyGenerator:r=>{
-    const auth=r.headers['authorization'];
-    if(auth&&auth.startsWith('Bearer '))return 'auth:'+auth.slice(7,30);
-    return r.ip;
-  }
+  // IP bazlı: JWT başlığı herkes için aynı olduğundan token önekiyle anahtar üretmek tüm kullanıcıları tek kovaya koyuyordu
+  keyGenerator:r=>r.ip
 });
 const authLimiter = rateLimit({ windowMs:15*60*1000, max:50, message:{error:'Cok fazla giris denemesi.'} });
 app.use(limiter);
@@ -80,6 +81,7 @@ app.use('/api/referral', require('./routes/referral'));
 app.use('/api/analytics', require('./routes/analytics'));
 app.use('/api/team', require('./routes/team'));
 app.use('/api/pdf', require('./routes/pdf'));
+app.use('/api/clinic', require('./routes/clinic'));
 app.use('/api', require('./routes/api'));
 
 app.use((req, res) => res.status(404).json({ error:'Endpoint bulunamadi: '+req.method+' '+req.path }));

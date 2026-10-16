@@ -444,17 +444,17 @@ async function migrate() {
         ('trial',      'Ücretsiz Deneme', 0,     0,      2,    1,  200,    10000,   1,  '["odontogram","prescriptions","sterilization","appointments","patients"]')
         ON CONFLICT DO NOTHING;
       INSERT INTO subscription_plans VALUES
-        ('starter',    'Solo Hekim',     890,   8900,   2,    1,  2000,   50000,   5,  '["odontogram","prescriptions","sterilization","appointments","patients","billing","inventory","xrays","reports_basic"]')
+        ('starter',    'Solo Hekim',     690,   6900,   2,    1,  2000,   50000,   5,  '["odontogram","prescriptions","sterilization","appointments","patients","billing","inventory","xrays","reports_basic"]')
         ON CONFLICT DO NOTHING;
       INSERT INTO subscription_plans VALUES
-        ('growth',     'Klinik',        1690,  16900,  8,    3,  NULL,   200000,  20, '["all_starter","multi_branch","multi_doctor","api_access","reports_advanced","team_management","ai_notes"]')
+        ('growth',     'Klinik',        1490,  14900,  8,    3,  NULL,   200000,  20, '["all_starter","multi_branch","multi_doctor","api_access","reports_advanced","team_management","ai_notes"]')
         ON CONFLICT DO NOTHING;
       INSERT INTO subscription_plans VALUES
         ('enterprise', 'Poliklinik',    NULL,  NULL,   NULL, NULL, NULL, NULL,    NULL,'["all_growth","sso","custom_domain","sla","dedicated_support","white_label"]')
         ON CONFLICT DO NOTHING;
       -- 2026-10: fiyatlar güncellendi (mevcut satırları da düzelt)
-      UPDATE subscription_plans SET price_monthly = 890,  price_annual = 8900  WHERE id = 'starter';
-      UPDATE subscription_plans SET price_monthly = 1690, price_annual = 16900 WHERE id = 'growth';
+      UPDATE subscription_plans SET price_monthly = 690,  price_annual = 6900  WHERE id = 'starter';
+      UPDATE subscription_plans SET price_monthly = 1490, price_annual = 14900 WHERE id = 'growth';
     `);
 
     // ── Safe ALTER TABLE — idempotent ────────────────────────────────────
@@ -479,6 +479,34 @@ async function migrate() {
       `ALTER TABLE invoices ADD COLUMN IF NOT EXISTS items JSONB DEFAULT '[]'`,
       `ALTER TABLE notifications ADD COLUMN IF NOT EXISTS channel TEXT NOT NULL DEFAULT 'in_app'`,
       `ALTER TABLE notifications ADD COLUMN IF NOT EXISTS sent_at TIMESTAMPTZ`,
+      // v9 (2026-10): onam, laboratuvar, taksit, hekim primi
+      `ALTER TABLE memberships ADD COLUMN IF NOT EXISTS commission_pct NUMERIC(5,2) NOT NULL DEFAULT 0`,
+      `ALTER TABLE invoices ADD COLUMN IF NOT EXISTS doctor_id UUID`,
+      `CREATE TABLE IF NOT EXISTS consent_forms (
+        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+        patient_id UUID NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+        template_key TEXT NOT NULL, title TEXT NOT NULL, body TEXT NOT NULL,
+        token TEXT UNIQUE, token_expires TIMESTAMPTZ,
+        signed_at TIMESTAMPTZ, signer_name TEXT, signature TEXT, signed_ip TEXT, signed_ua TEXT,
+        created_by UUID, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`,
+      `CREATE INDEX IF NOT EXISTS consent_pt ON consent_forms(tenant_id, patient_id)`,
+      `CREATE TABLE IF NOT EXISTS lab_orders (
+        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+        patient_id UUID NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+        doctor_id UUID, lab_name TEXT NOT NULL, work_type TEXT NOT NULL, teeth TEXT, shade TEXT,
+        sent_on DATE NOT NULL DEFAULT CURRENT_DATE, due_on DATE, received_on DATE,
+        status TEXT NOT NULL DEFAULT 'sent' CHECK (status IN ('sent','tryin','received','delivered','cancelled')),
+        cost NUMERIC(12,2) NOT NULL DEFAULT 0, notes TEXT, created_by UUID, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`,
+      `CREATE INDEX IF NOT EXISTS lab_tenant ON lab_orders(tenant_id, status)`,
+      `CREATE TABLE IF NOT EXISTS installments (
+        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+        invoice_id UUID NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
+        no SMALLINT NOT NULL, due_on DATE NOT NULL, amount NUMERIC(12,2) NOT NULL,
+        paid_at TIMESTAMPTZ, payment_id UUID, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`,
+      `CREATE INDEX IF NOT EXISTS inst_tenant ON installments(tenant_id, due_on)`,
     ];
     for (const sql of safeAlters) {
       await client.query(sql).catch(e => console.warn('ALTER skip:', e.message));
@@ -486,7 +514,7 @@ async function migrate() {
     await client.query(`CREATE SEQUENCE IF NOT EXISTS inv_seq START 1`).catch(()=>{});
 
     await client.query('COMMIT');
-    console.log('✅ Migration tamamlandı (v8).');
+    console.log('✅ Migration tamamlandı (v9).');
   } catch (err) {
     await client.query('ROLLBACK');
     console.error('❌ Migration hatası:', err.message);

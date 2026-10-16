@@ -56,18 +56,33 @@ router.get('/appointments', can('appointment.read'), async (req,res)=>{
     else if(from&&to){w+=` AND (a.starts_at AT TIME ZONE 'Europe/Istanbul')::date BETWEEN $${i} AND $${i+1}`;p.push(from,to);i+=2;}
     if(doctor_id){w+=` AND a.doctor_id=$${i}`;p.push(doctor_id);i++;}
     if(patient_id){w+=` AND a.patient_id=$${i}`;p.push(patient_id);i++;}
-    const r=await query(`SELECT a.*,p.first_name,p.last_name,p.phone,u.name doctor_name FROM appointments a JOIN patients p ON p.id=a.patient_id JOIN users u ON u.id=a.doctor_id ${w} ORDER BY a.starts_at`,p);
+    const r=await query(`SELECT a.*,p.first_name,p.last_name,p.phone,u.name doctor_name,c.name chair_name,c.color chair_color FROM appointments a JOIN patients p ON p.id=a.patient_id JOIN users u ON u.id=a.doctor_id LEFT JOIN chairs c ON c.id=a.chair_id ${w} ORDER BY a.starts_at`,p);
     res.json(r.rows);
   }catch(err){res.status(500).json({error:err.message});}
 });
+// Hasta/hekim/koltuk aynı kliniğe mi ait? (başka kliniğin kaydına randevu yazılamaz)
+async function aptRefsOk(tid,f){
+  const pt=await query('SELECT 1 FROM patients WHERE id=$1 AND tenant_id=$2',[f.patient_id,tid]);
+  if(!pt.rows.length)return 'Hasta bulunamadı';
+  const dr=await query("SELECT 1 FROM memberships WHERE user_id=$1 AND tenant_id=$2 AND status<>'removed'",[f.doctor_id,tid]);
+  if(!dr.rows.length)return 'Hekim bu klinikte kayıtlı değil';
+  if(f.chair_id){const ch=await query('SELECT 1 FROM chairs WHERE id=$1 AND tenant_id=$2',[f.chair_id,tid]);if(!ch.rows.length)return 'Koltuk bulunamadı';}
+  return null;
+}
+async function aptConflict(tid,f,exceptId){
+  const r=await query(`SELECT id FROM appointments WHERE tenant_id=$1 AND status NOT IN ('cancelled','no-show') AND starts_at<$2 AND ends_at>$3 AND id<>$4
+    AND (doctor_id=$5 OR ($6::uuid IS NOT NULL AND chair_id=$6::uuid))`,[tid,f.ends_at,f.starts_at,exceptId||'00000000-0000-0000-0000-000000000000',f.doctor_id,f.chair_id||null]);
+  return r.rows.length>0;
+}
 router.post('/appointments', can('appointment.write'), async (req,res)=>{
   try{
-    const f=req.body;if(!f.patient_id||!f.starts_at)return res.status(400).json({error:'Zorunlu alanlar eksik'});
-    const did=f.doctor_id||req.user.id;
-    const end=f.ends_at||new Date(new Date(f.starts_at).getTime()+30*60000).toISOString();
-    const conflict=await query(`SELECT id FROM appointments WHERE tenant_id=$1 AND doctor_id=$2 AND status!='cancelled' AND starts_at<$3 AND ends_at>$4`,[req.tenantId,did,end,f.starts_at]);
-    if(conflict.rows.length)return res.status(409).json({error:'Bu saatte çakışan randevu var'});
-    const r=await query(`INSERT INTO appointments(tenant_id,patient_id,doctor_id,starts_at,ends_at,type,status,tooth_numbers,notes,created_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,[req.tenantId,f.patient_id,did,f.starts_at,end,f.type||'Muayene','scheduled',f.tooth_numbers||null,f.notes||null,req.user.id]);
+    const f={...req.body};if(!f.patient_id||!f.starts_at)return res.status(400).json({error:'Zorunlu alanlar eksik'});
+    f.doctor_id=f.doctor_id||req.user.id;f.chair_id=f.chair_id||null;
+    f.ends_at=f.ends_at||new Date(new Date(f.starts_at).getTime()+30*60000).toISOString();
+    if(new Date(f.ends_at)<=new Date(f.starts_at))return res.status(400).json({error:'Bitiş saati başlangıçtan sonra olmalı'});
+    const bad=await aptRefsOk(req.tenantId,f);if(bad)return res.status(400).json({error:bad});
+    if(await aptConflict(req.tenantId,f))return res.status(409).json({error:'Bu saatte hekimin ya da koltuğun başka randevusu var'});
+    const r=await query(`INSERT INTO appointments(tenant_id,patient_id,doctor_id,chair_id,starts_at,ends_at,type,status,tooth_numbers,notes,created_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,[req.tenantId,f.patient_id,f.doctor_id,f.chair_id,f.starts_at,f.ends_at,f.type||'Muayene','scheduled',f.tooth_numbers||null,f.notes||null,req.user.id]);
     res.status(201).json(r.rows[0]);
   }catch(err){res.status(500).json({error:err.message});}
 });
@@ -75,8 +90,15 @@ router.put('/appointments/:id', can('appointment.write'), async (req,res)=>{
   try{
     const a=await query('SELECT * FROM appointments WHERE id=$1 AND tenant_id=$2',[req.params.id,req.tenantId]);
     if(!a.rows.length)return res.status(404).json({error:'Bulunamadı'});
-    const f={...a.rows[0],...req.body};
-    const r=await query(`UPDATE appointments SET patient_id=$1,doctor_id=$2,starts_at=$3,ends_at=$4,type=$5,status=$6,tooth_numbers=$7,notes=$8,no_show=$9 WHERE id=$10 RETURNING *`,[f.patient_id,f.doctor_id,f.starts_at,f.ends_at,f.type,f.status,f.tooth_numbers,f.notes,f.status==='no-show',a.rows[0].id]);
+    const ALLOWED=['patient_id','doctor_id','chair_id','starts_at','ends_at','type','status','tooth_numbers','notes'];
+    const f={...a.rows[0]};for(const k of ALLOWED)if(k in req.body)f[k]=req.body[k];
+    if(!['scheduled','arrived','completed','cancelled','no-show'].includes(f.status))return res.status(400).json({error:'Geçersiz durum'});
+    if(new Date(f.ends_at)<=new Date(f.starts_at))return res.status(400).json({error:'Bitiş saati başlangıçtan sonra olmalı'});
+    const bad=await aptRefsOk(req.tenantId,f);if(bad)return res.status(400).json({error:bad});
+    const revived=['cancelled','no-show'].includes(a.rows[0].status)&&!['cancelled','no-show'].includes(f.status);
+    const moved=revived||['starts_at','ends_at','doctor_id','chair_id'].some(k=>k in req.body);
+    if(moved&&!['cancelled','no-show'].includes(f.status)&&await aptConflict(req.tenantId,f,a.rows[0].id))return res.status(409).json({error:'Bu saatte hekimin ya da koltuğun başka randevusu var'});
+    const r=await query(`UPDATE appointments SET patient_id=$1,doctor_id=$2,chair_id=$3,starts_at=$4,ends_at=$5,type=$6,status=$7,tooth_numbers=$8,notes=$9,no_show=$10 WHERE id=$11 AND tenant_id=$12 RETURNING *`,[f.patient_id,f.doctor_id,f.chair_id||null,f.starts_at,f.ends_at,f.type,f.status,f.tooth_numbers,f.notes,f.status==='no-show',a.rows[0].id,req.tenantId]);
     res.json(r.rows[0]);
   }catch(err){res.status(500).json({error:err.message});}
 });
@@ -232,28 +254,46 @@ router.get('/invoices', can('billing.read'), async (req,res)=>{
 router.post('/invoices', can('billing.write'), async (req,res)=>{
   try{
     const f=req.body;if(!f.patient_id)return res.status(400).json({error:'Hasta zorunlu'});
-    const cnt=await query('SELECT COUNT(*) c FROM invoices WHERE tenant_id=$1',[req.tenantId]);
-    const inv_no='DS-'+String(+cnt.rows[0].c+1).padStart(4,'0');
+    const ptOk=await query('SELECT 1 FROM patients WHERE id=$1 AND tenant_id=$2',[f.patient_id,req.tenantId]);
+    if(!ptOk.rows.length)return res.status(400).json({error:'Hasta bulunamadı'});
+    let doctorId=null;
+    if(f.doctor_id){const d=await query("SELECT 1 FROM memberships WHERE user_id=$1 AND tenant_id=$2",[f.doctor_id,req.tenantId]);if(d.rows.length)doctorId=f.doctor_id;}
+    const seq=await query(`SELECT COALESCE(MAX(NULLIF(regexp_replace(inv_no,'\\D','','g'),'')::int),0)+1 n FROM invoices WHERE tenant_id=$1`,[req.tenantId]);
+    const inv_no='DS-'+String(seq.rows[0].n).padStart(4,'0');
     const items=typeof f.items==='object'?JSON.stringify(f.items):(f.items||'[]');
-    const sub=parseFloat(f.subtotal)||0,disc=parseFloat(f.discount||f.discount_amount||0);
-    const taxR=parseFloat(f.tax_rate||0),taxA=(sub-disc)*taxR/100;
-    const total=Math.max(0,sub-disc+taxA),paid=parseFloat(f.amount_paid||0);
+    const num=(v)=>{const n=Number(v||0);return Number.isFinite(n)?n:NaN;};
+    const sub=num(f.subtotal),disc=num(f.discount||f.discount_amount),taxR=num(f.tax_rate),paid=num(f.amount_paid);
+    if([sub,disc,taxR,paid].some(Number.isNaN))return res.status(400).json({error:'Tutarlar sayı olmalı'});
+    if(sub<0||disc<0||disc>sub||taxR<0||taxR>100||paid<0)return res.status(400).json({error:'Tutar, indirim veya KDV oranı geçersiz'});
+    const taxA=(sub-disc)*taxR/100;
+    const total=Math.max(0,sub-disc+taxA);
+    if(paid>total+0.01)return res.status(400).json({error:'Ödenen tutar fatura toplamını aşamaz'});
+    if(f.appointment_id){const ap=await query('SELECT 1 FROM appointments WHERE id=$1 AND tenant_id=$2',[f.appointment_id,req.tenantId]);if(!ap.rows.length)f.appointment_id=null;}
     const status=paid>=total&&total>0?'paid':paid>0?'partial':'draft';
     const r=await query(`INSERT INTO invoices(tenant_id,patient_id,appointment_id,inv_no,inv_date,status,items,subtotal,discount_amount,tax_rate,tax_amount,total,amount_paid,notes,created_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING *`,[req.tenantId,f.patient_id,f.appointment_id||null,inv_no,f.inv_date||trDay(0),status,items,sub.toFixed(2),disc.toFixed(2),taxR.toFixed(2),taxA.toFixed(2),total.toFixed(2),paid.toFixed(2),f.notes||null,req.user.id]);
     if(paid>0)await query(`INSERT INTO payments(tenant_id,invoice_id,amount,method,paid_at,recorded_by) VALUES($1,$2,$3,$4,NOW(),$5)`,[req.tenantId,r.rows[0].id,paid,f.payment_method||'nakit',req.user.id]);
+    if(doctorId)await query('UPDATE invoices SET doctor_id=$1 WHERE id=$2',[doctorId,r.rows[0].id]);
+    // Taksit planı: kalan tutar n eşit taksite bölünür, ilk vade first_due, sonra aylık
+    const n=Math.min(36,Math.max(0,parseInt(f.installments||0,10)));
+    const rest=Math.round((total-paid)*100)/100;
+    if(n>=2&&rest>0){
+      const base=Math.floor(rest/n*100)/100;let first=f.first_due&&/^\d{4}-\d{2}-\d{2}$/.test(f.first_due)?f.first_due:trDay(30*86400000);
+      for(let k=0;k<n;k++){
+        const d=new Date(first+'T12:00:00Z');d.setUTCMonth(d.getUTCMonth()+k);
+        const amt=k===n-1?Math.round((rest-base*(n-1))*100)/100:base;
+        await query('INSERT INTO installments(tenant_id,invoice_id,no,due_on,amount) VALUES($1,$2,$3,$4,$5)',[req.tenantId,r.rows[0].id,k+1,d.toISOString().slice(0,10),amt]);
+      }
+    }
     res.status(201).json(r.rows[0]);
   }catch(err){res.status(500).json({error:err.message});}
 });
+// Ödemeler /api/clinic/invoices/:id/pay üzerinden alınır; burada yalnız not güncellenir
 router.put('/invoices/:id', can('billing.write'), async (req,res)=>{
   try{
-    const inv=await query('SELECT * FROM invoices WHERE id=$1 AND tenant_id=$2',[req.params.id,req.tenantId]);
-    if(!inv.rows.length)return res.status(404).json({error:'Bulunamadı'});
-    const f={...inv.rows[0],...req.body};
-    const np=parseFloat(f.amount_paid||0),tot=parseFloat(f.total||0);
-    const st=np>=tot&&tot>0?'paid':np>0?'partial':'draft';
-    const r=await query('UPDATE invoices SET status=$1,amount_paid=$2,notes=$3 WHERE id=$4 RETURNING *',[st,np.toFixed(2),f.notes,inv.rows[0].id]);
+    const r=await query('UPDATE invoices SET notes=$1 WHERE id=$2 AND tenant_id=$3 RETURNING *',[String(req.body.notes||'').slice(0,1000)||null,req.params.id,req.tenantId]);
+    if(!r.rows.length)return res.status(404).json({error:'Bulunamadı'});
     res.json(r.rows[0]);
-  }catch(err){res.status(500).json({error:err.message});}
+  }catch(err){res.status(500).json({error:'İşlem yapılamadı'});}
 });
 router.delete('/invoices/:id', can('billing.manage'), async (req,res)=>{
   await query(`UPDATE invoices SET status='void' WHERE id=$1 AND tenant_id=$2`,[req.params.id,req.tenantId]);
